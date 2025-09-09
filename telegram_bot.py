@@ -85,28 +85,67 @@ async def check_out(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.message.from_user.id
     now = get_now()
 
-    if user_id in user_data:
-        user_data[user_id]["check_out"] = now
-        await update.message.reply_text("You have checked out.")
+    # Define valid check-out times
+    checkout_break_start = datetime.time(23, 0)
+    checkout_break_end = datetime.time(23, 59, 59)
+    checkout_final_start = datetime.time(5, 0)
+    checkout_final_end = datetime.time(6, 0)
+
+    is_valid_time = (now.time() >= checkout_break_start and now.time() <= checkout_break_end) or \
+                    (now.time() >= checkout_final_start and now.time() <= checkout_final_end)
+
+    if is_valid_time:
+        if user_id in user_data:
+            user_data[user_id]["check_out"] = now
+        # No message is sent for a valid checkout, as per user preference.
+    else:
+        await update.message.reply_text("You are not allowed to check out at this time.")
 
 
 async def wc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles the 'wc' message."""
-    user_id = update.message.from_user.id
+    user = update.message.from_user
+    user_id = user.id
+    
+    # If user has no record, create one
+    if user_id not in user_data:
+        user_data[user_id] = {
+            "name": user.full_name,
+            "check_in": None,
+            "check_out": None,
+            "wc_count": 0, "wc_late": 0,
+            "smoke_count": 0, "smoke_late": 0,
+            "eat_count": 0, "eat_late": 0
+        }
+
     if user_id not in user_breaks:
         user_breaks[user_id] = {"type": "wc", "start_time": get_now()}
 
 
 async def smoke(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles the 'smoke' message."""
-    user_id = update.message.from_user.id
+    user = update.message.from_user
+    user_id = user.id
+
+    # If user has no record, create one
+    if user_id not in user_data:
+        user_data[user_id] = {
+            "name": user.full_name,
+            "check_in": None,
+            "check_out": None,
+            "wc_count": 0, "wc_late": 0,
+            "smoke_count": 0, "smoke_late": 0,
+            "eat_count": 0, "eat_late": 0
+        }
+
     if user_id not in user_breaks:
         user_breaks[user_id] = {"type": "smoke", "start_time": get_now()}
 
 
 async def eat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles the 'eat' message."""
-    user_id = update.message.from_user.id
+    user = update.message.from_user
+    user_id = user.id
     now = get_now()
 
     eat_time1_start = now.replace(hour=21, minute=0, second=0, microsecond=0)
@@ -116,6 +155,18 @@ async def eat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if (now >= eat_time1_start and now <= eat_time1_end) or \
        (now >= eat_time2_start and now <= eat_time2_end):
+        
+        # If user has no record, create one
+        if user_id not in user_data:
+            user_data[user_id] = {
+                "name": user.full_name,
+                "check_in": None,
+                "check_out": None,
+                "wc_count": 0, "wc_late": 0,
+                "smoke_count": 0, "smoke_late": 0,
+                "eat_count": 0, "eat_late": 0
+            }
+
         if user_id not in user_breaks:
             user_breaks[user_id] = {"type": "eat", "start_time": get_now()}
     else:
@@ -170,7 +221,7 @@ async def get_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await update.message.reply_text("No activity to report for today.")
         return
 
-    # Sort users by check-in time
+    # Sort users by check-in time, handling cases where check-in is None
     sorted_users = sorted(user_data.items(), key=lambda item: item[1].get('check_in') or datetime.datetime.max.replace(tzinfo=CAMBODIA_TZ))
 
     report_data = []
