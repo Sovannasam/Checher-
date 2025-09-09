@@ -6,6 +6,8 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 import datetime
 import pytz
 import pandas as pd
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill, Font, Border, Side, Alignment
 
 # --- Basic Logging Setup ---
 logging.basicConfig(
@@ -191,6 +193,64 @@ async def get_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     df = pd.DataFrame(report_data)
     file_path = f"daily_report_{get_now().strftime('%Y-%m-%d')}.xlsx"
     df.to_excel(file_path, index=False)
+    
+    # --- Apply styling to the Excel file ---
+    wb = load_workbook(file_path)
+    ws = wb.active
+
+    # Define styles
+    header_fill = PatternFill(start_color="4AACC5", end_color="4AACC5", fill_type="solid")
+    header_font = Font(color="FFFFFF", bold=True)
+    late_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+    thin_border = Border(left=Side(style='thin'),
+                         right=Side(style='thin'),
+                         top=Side(style='thin'),
+                         bottom=Side(style='thin'))
+    center_align = Alignment(horizontal='center', vertical='center')
+
+    # Style the header row
+    for cell in ws[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.border = thin_border
+        cell.alignment = center_align
+
+    # Find the columns for conditional formatting by header name
+    late_columns_indices = []
+    for col_idx, cell in enumerate(ws[1], 1):
+        if cell.value in ["WC late (m)", "Smoke late (m)", "Eat late (m)"]:
+            late_columns_indices.append(col_idx)
+
+    # Style the data rows
+    for row in ws.iter_rows(min_row=2):
+        for cell in row:
+            cell.border = thin_border
+            cell.alignment = center_align
+            
+            # Apply conditional formatting for 'late' columns
+            if cell.column in late_columns_indices and cell.value is not None:
+                try:
+                    if int(cell.value) > 0:
+                        cell.fill = late_fill
+                        cell.value = f"{cell.value} minute"
+                except (ValueError, TypeError):
+                    pass
+
+    # Auto-adjust column widths
+    for column_cells in ws.columns:
+        max_length = 0
+        column_letter = column_cells[0].column_letter
+        for cell in column_cells:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+            except:
+                pass
+        adjusted_width = (max_length + 2)
+        ws.column_dimensions[column_letter].width = adjusted_width
+
+    # Save the styled workbook
+    wb.save(file_path)
 
     await context.bot.send_document(chat_id=update.message.chat_id, document=open(file_path, 'rb'))
     os.remove(file_path)
