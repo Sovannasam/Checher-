@@ -325,19 +325,32 @@ def main() -> None:
     job_queue = application.job_queue
     clear_time = datetime.time(hour=5, minute=30, tzinfo=CAMBODIA_TZ)
     job_queue.run_daily(clear_data_job, clear_time)
-
+    
+    # Regex for commands
+    CHECKIN_REGEX = re.compile(
+        r"^\s*(?:check\s*[- ]?in|checkin|ci|in|start(?:\s*[- ]?work)?)\s*$", re.IGNORECASE
+    )
+    CHECKOUT_REGEX = re.compile(
+        r"^\s*(?:check\s*[- ]?out|checkout|co|out|end(?:\s*[- ]?work)?)\s*$", re.IGNORECASE
+    )
+    WC_REGEX = re.compile(r"^\s*(?:wc|toilet|restroom)(?:\d{1,2})?\s*$", re.IGNORECASE)
+    SMOKE_REGEX = re.compile(r"^\s*(?:sm|smoke|cig(?:arette)?)(?:\d{1,2})?\s*$", re.IGNORECASE)
+    EAT_REGEX = re.compile(r"^\s*(?:eat|meal|dinner|lunch)(?:\d{1,2})?\s*$", re.IGNORECASE)
+    END_TOKENS_REGEX = re.compile(
+        r"^\s*(?:\+?1|back(?:\s+to\s+seat)?|finish|done)\s*$", re.IGNORECASE
+    )
 
     # on different commands - answer in Telegram
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("getreport", get_report))
 
     # on non command i.e message - echo the message on Telegram
-    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^check in$', re.IGNORECASE)), check_in))
-    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^check out$', re.IGNORECASE)), check_out))
-    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^wc\d*$', re.IGNORECASE)), wc))
-    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^smoke\d*$', re.IGNORECASE)), smoke))
-    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^eat\d*$', re.IGNORECASE)), eat))
-    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^(1|\+1|back|finish|done|back to seat)$', re.IGNORECASE)), back_from_break))
+    application.add_handler(MessageHandler(filters.Regex(CHECKIN_REGEX), check_in))
+    application.add_handler(MessageHandler(filters.Regex(CHECKOUT_REGEX), check_out))
+    application.add_handler(MessageHandler(filters.Regex(WC_REGEX), wc))
+    application.add_handler(MessageHandler(filters.Regex(SMOKE_REGEX), smoke))
+    application.add_handler(MessageHandler(filters.Regex(EAT_REGEX), eat))
+    application.add_handler(MessageHandler(filters.Regex(END_TOKENS_REGEX), back_from_break))
     
     # Run the bot until the user presses Ctrl-C
     application.run_polling()
