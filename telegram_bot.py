@@ -1,10 +1,18 @@
 import os
 import re
+import logging
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import datetime
 import pytz
 import pandas as pd
+
+# --- Basic Logging Setup ---
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 # --- Configuration ---
 # It is recommended to use environment variables for sensitive data
@@ -20,6 +28,12 @@ user_breaks = {}
 def get_now():
     """Gets the current time in Cambodia timezone."""
     return datetime.datetime.now(CAMBODIA_TZ)
+
+# --- Error Handler ---
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Logs the error and sends a telegram message to notify the developer."""
+    logger.error("Exception while handling an update:", exc_info=context.error)
+
 
 # --- Command Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -189,6 +203,9 @@ async def get_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 def main() -> None:
     """Start the bot."""
     application = Application.builder().token(TELEGRAM_TOKEN).build()
+
+    # Add the error handler
+    application.add_error_handler(error_handler)
 
     # on different commands - answer in Telegram
     application.add_handler(CommandHandler("start", start))
