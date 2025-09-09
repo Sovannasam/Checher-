@@ -211,7 +211,7 @@ async def back_from_break(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def get_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Generates and sends the daily report if requested by an admin, then clears the data."""
+    """Generates and sends the daily report if requested by an admin."""
     user = update.message.from_user
     if user.username != ADMIN_USERNAME:
         await update.message.reply_text("You are not authorized to perform this action.")
@@ -306,10 +306,13 @@ async def get_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await context.bot.send_document(chat_id=update.message.chat_id, document=open(file_path, 'rb'))
     os.remove(file_path)
 
-    # Clear data for the next shift
+    await update.message.reply_text("Report sent.")
+
+async def clear_data_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Clears all user data for the new day."""
     user_data.clear()
     user_breaks.clear()
-    await update.message.reply_text("Report sent. Activity data for this shift has been cleared.")
+    logger.info("Daily user data has been cleared automatically.")
 
 def main() -> None:
     """Start the bot."""
@@ -317,6 +320,12 @@ def main() -> None:
 
     # Add the error handler
     application.add_error_handler(error_handler)
+    
+    # Schedule the daily data clear job
+    job_queue = application.job_queue
+    clear_time = datetime.time(hour=5, minute=30, tzinfo=CAMBODIA_TZ)
+    job_queue.run_daily(clear_data_job, clear_time)
+
 
     # on different commands - answer in Telegram
     application.add_handler(CommandHandler("start", start))
