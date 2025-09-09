@@ -1,4 +1,5 @@
 import os
+import re
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import datetime
@@ -8,7 +9,6 @@ import pandas as pd
 # --- Configuration ---
 # It is recommended to use environment variables for sensitive data
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")
-GROUP_CHAT_ID = os.environ.get("GROUP_CHAT_ID", "YOUR_GROUP_CHAT_ID")
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "excelmerge")
 CAMBODIA_TZ = pytz.timezone('Asia/Phnom_Penh')
 
@@ -198,17 +198,16 @@ def main() -> None:
     application.add_handler(CommandHandler("getreport", get_report))
 
     # on non command i.e message - echo the message on Telegram
-    application.add_handler(MessageHandler(filters.Regex(r'^(?i)check in$'), check_in))
-    application.add_handler(MessageHandler(filters.Regex(r'^(?i)check out$'), check_out))
-    application.add_handler(MessageHandler(filters.Regex(r'^(?i)wc$'), wc))
-    application.add_handler(MessageHandler(filters.Regex(r'^(?i)smoke$'), smoke))
-    application.add_handler(MessageHandler(filters.Regex(r'^(?i)eat$'), eat))
-    application.add_handler(MessageHandler(filters.Regex(r'^(?i)(1|\+1|back|finish|done|back to seat)$'), back_from_break))
+    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^check in$', re.IGNORECASE)), check_in))
+    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^check out$', re.IGNORECASE)), check_out))
+    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^wc$', re.IGNORECASE)), wc))
+    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^smoke$', re.IGNORECASE)), smoke))
+    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^eat$', re.IGNORECASE)), eat))
+    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^(1|\+1|back|finish|done|back to seat)$', re.IGNORECASE)), back_from_break))
     
     # Run the bot until the user presses Ctrl-C
     application.run_polling()
 
 if __name__ == '__main__':
     main()
-
 
