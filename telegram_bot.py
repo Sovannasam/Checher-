@@ -334,9 +334,9 @@ def main() -> None:
     # on non command i.e message - echo the message on Telegram
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^check in$', re.IGNORECASE)), check_in))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^check out$', re.IGNORECASE)), check_out))
-    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^wc$', re.IGNORECASE)), wc))
-    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^smoke$', re.IGNORECASE)), smoke))
-    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^eat$', re.IGNORECASE)), eat))
+    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^wc\d*$', re.IGNORECASE)), wc))
+    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^smoke\d*$', re.IGNORECASE)), smoke))
+    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^eat\d*$', re.IGNORECASE)), eat))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^(1|\+1|back|finish|done|back to seat)$', re.IGNORECASE)), back_from_break))
     
     # Run the bot until the user presses Ctrl-C
