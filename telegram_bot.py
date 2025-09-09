@@ -79,14 +79,14 @@ async def wc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.message.from_user.id
     if user_id not in user_breaks:
         user_breaks[user_id] = {"type": "wc", "start_time": get_now()}
-        await update.message.reply_text("You are on a WC break. Please reply when you are back.")
+
 
 async def smoke(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles the 'smoke' message."""
     user_id = update.message.from_user.id
     if user_id not in user_breaks:
         user_breaks[user_id] = {"type": "smoke", "start_time": get_now()}
-        await update.message.reply_text("You are on a smoke break. Please reply when you are back.")
+
 
 async def eat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles the 'eat' message."""
@@ -102,7 +102,6 @@ async def eat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
        (now >= eat_time2_start and now <= eat_time2_end):
         if user_id not in user_breaks:
             user_breaks[user_id] = {"type": "eat", "start_time": get_now()}
-            await update.message.reply_text("You are on an eating break. Please reply when you are back.")
     else:
         await update.message.reply_text("It's not time to eat yet.")
 
@@ -122,13 +121,13 @@ async def back_from_break(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 if duration > 10:
                     late_minutes = duration - 10
                     user_data[user_id]["wc_late"] += late_minutes
-                    await update.message.reply_text(f"You are late from WC break by {late_minutes} minutes.")
+                    await update.message.reply_text(f"You are late {late_minutes} minutes.")
             elif break_type == 'smoke':
                 user_data[user_id]["smoke_count"] += 1
                 if duration > 5:
                     late_minutes = duration - 5
                     user_data[user_id]["smoke_late"] += late_minutes
-                    await update.message.reply_text(f"You are late from smoke break by {late_minutes} minutes.")
+                    await update.message.reply_text(f"You are late {late_minutes} minutes.")
             elif break_type == 'eat':
                 user_data[user_id]["eat_count"] += 1
                 late_minutes = 0
@@ -141,9 +140,7 @@ async def back_from_break(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 
                 if late_minutes > 0:
                     user_data[user_id]["eat_late"] += late_minutes
-                    await update.message.reply_text(f"You are late from eat break by {late_minutes} minutes.")
-        
-        await update.message.reply_text("Welcome back!")
+                    await update.message.reply_text(f"You are late {late_minutes} minutes.")
 
 
 async def get_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
