@@ -167,15 +167,15 @@ async def back_from_break(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if break_type == 'wc':
             user_data[user_id]["wc_count"] += 1
             duration_minutes = (end_time - start_time).total_seconds() / 60
-            if duration_minutes > 10:
-                late_minutes = int(duration_minutes - 10)
+            if duration_minutes > 15:
+                late_minutes = int(duration_minutes - 15)
                 user_data[user_id]["wc_late"] += late_minutes
         
         elif break_type == 'smoke':
             user_data[user_id]["smoke_count"] += 1
             duration_minutes = (end_time - start_time).total_seconds() / 60
-            if duration_minutes > 5:
-                late_minutes = int(duration_minutes - 5)
+            if duration_minutes > 10:
+                late_minutes = int(duration_minutes - 10)
                 user_data[user_id]["smoke_late"] += late_minutes
 
         elif break_type == 'eat':
