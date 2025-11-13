@@ -73,14 +73,14 @@ async def check_in(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_data[user.id]["check_in"] = now
 
     # Check-in time logic
-    if datetime.time(16, 0) <= now.time() < datetime.time(17, 0):
+    if datetime.time(14, 0) <= now.time() < datetime.time(15, 0):
         await update.message.reply_text("Well done!")
-    elif datetime.time(17, 9) < now.time() < datetime.time(20, 0):
-        late_minutes = int((now - now.replace(hour=17, minute=0, second=0, microsecond=0)).total_seconds() / 60)
+    elif datetime.time(15, 9) < now.time() < datetime.time(17, 0):
+        late_minutes = int((now - now.replace(hour=15, minute=0, second=0, microsecond=0)).total_seconds() / 60)
         await update.message.reply_text(f"You are late by {late_minutes} minutes.")
-    elif datetime.time(23, 1) < now.time() < datetime.time(23, 59):
-        late_minutes = int((now - now.replace(hour=23, minute=0, second=0, microsecond=0)).total_seconds() / 60)
-        await update.message.reply_text(f"You are late by {late_minutes} minutes (from 11 PM).")
+    elif datetime.time(20, 1) < now.time() < datetime.time(20, 59):
+        late_minutes = int((now - now.replace(hour=20, minute=0, second=0, microsecond=0)).total_seconds() / 60)
+        await update.message.reply_text(f"You are late by {late_minutes} minutes (from 8 PM).")
 
 
 async def check_out(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -89,10 +89,10 @@ async def check_out(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     now = get_now()
 
     # Define valid check-out times
-    checkout_break_start = datetime.time(23, 0)
-    checkout_break_end = datetime.time(23, 59, 59)
-    checkout_final_start = datetime.time(5, 0)
-    checkout_final_end = datetime.time(6, 0)
+    checkout_break_start = datetime.time(20, 0)
+    checkout_break_end = datetime.time(20, 59, 59)
+    checkout_final_start = datetime.time(3, 0)
+    checkout_final_end = datetime.time(4, 0)
 
     is_valid_time = (checkout_break_start <= now.time() <= checkout_break_end) or \
                       (checkout_final_start <= now.time() <= checkout_final_end)
@@ -132,10 +132,10 @@ async def eat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.message.from_user
     now = get_now()
 
-    eat_time1_start = now.replace(hour=21, minute=0, second=0, microsecond=0)
-    eat_time1_end = now.replace(hour=21, minute=30, second=0, microsecond=0)
-    eat_time2_start = now.replace(hour=1, minute=0, second=0, microsecond=0)
-    eat_time2_end = now.replace(hour=1, minute=30, second=0, microsecond=0)
+    eat_time1_start = now.replace(hour=17, minute=0, second=0, microsecond=0)
+    eat_time1_end = now.replace(hour=17, minute=30, second=0, microsecond=0)
+    eat_time2_start = now.replace(hour=00, minute=30, second=0, microsecond=0)
+    eat_time2_end = now.replace(hour=1, minute=00, second=0, microsecond=0)
 
     if (eat_time1_start <= now <= eat_time1_end) or \
        (eat_time2_start <= now <= eat_time2_end):
@@ -187,12 +187,12 @@ async def back_from_break(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             deadline = None
             
             # First eating window (21:00 - 21:30)
-            if start_time.hour == 21:
-                deadline = start_time.replace(hour=21, minute=30, second=0, microsecond=0)
+            if start_time.hour == 17:
+                deadline = start_time.replace(hour=17, minute=30, second=0, microsecond=0)
             
             # Second eating window (01:00 - 01:30)
             elif start_time.hour == 1:
-                deadline = start_time.replace(hour=1, minute=30, second=0, microsecond=0)
+                deadline = start_time.replace(hour=00, minute=30, second=0, microsecond=0)
 
             if deadline and end_time > deadline:
                 late_minutes = int((end_time - deadline).total_seconds() / 60)
