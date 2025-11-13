@@ -289,7 +289,7 @@ def main() -> None:
     
     # Schedule the daily data clear job
     job_queue = application.job_queue
-    clear_time = datetime.time(hour=5, minute=30, tzinfo=CAMBODIA_TZ)
+    clear_time = datetime.time(hour=3, minute=30, tzinfo=CAMBODIA_TZ)
     job_queue.run_daily(clear_data_job, clear_time)
     
     # Regex for commands
