@@ -75,12 +75,12 @@ async def check_in(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # Check-in time logic
     if datetime.time(14, 0) <= now.time() < datetime.time(15, 0):
         await update.message.reply_text("Well done!")
-    elif datetime.time(15, 9) < now.time() < datetime.time(17, 0):
+    elif datetime.time(15, 9) < now.time() < datetime.time(18, 0):
         late_minutes = int((now - now.replace(hour=15, minute=0, second=0, microsecond=0)).total_seconds() / 60)
         await update.message.reply_text(f"You are late by {late_minutes} minutes.")
-    elif datetime.time(20, 1) < now.time() < datetime.time(20, 59):
-        late_minutes = int((now - now.replace(hour=20, minute=0, second=0, microsecond=0)).total_seconds() / 60)
-        await update.message.reply_text(f"You are late by {late_minutes} minutes (from 8 PM).")
+    elif datetime.time(21, 1) < now.time() < datetime.time(21, 59):
+        late_minutes = int((now - now.replace(hour=21, minute=0, second=0, microsecond=0)).total_seconds() / 60)
+        await update.message.reply_text(f"You are late by {late_minutes} minutes (from 9 PM).")
 
 
 async def check_out(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -89,10 +89,10 @@ async def check_out(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     now = get_now()
 
     # Define valid check-out times
-    checkout_break_start = datetime.time(20, 0)
-    checkout_break_end = datetime.time(20, 59, 59)
+    checkout_break_start = datetime.time(21, 0)
+    checkout_break_end = datetime.time(21, 59, 59)
     checkout_final_start = datetime.time(3, 0)
-    checkout_final_end = datetime.time(4, 0)
+    checkout_final_end = datetime.time(6, 0)
 
     is_valid_time = (checkout_break_start <= now.time() <= checkout_break_end) or \
                       (checkout_final_start <= now.time() <= checkout_final_end)
