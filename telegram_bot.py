@@ -3,7 +3,6 @@ import re
 import logging
 import datetime
 import pytz
-import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Font, Border, Side, Alignment
 from telegram import Update
