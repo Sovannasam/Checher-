@@ -3,6 +3,10 @@ import re
 import logging
 import datetime
 import pytz
+import json  # Import json
+import asyncio # Import asyncio
+import asyncpg # Import asyncpg
+from typing import Optional # Import Optional
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Font, Border, Side, Alignment
 from telegram import Update
@@ -16,14 +20,135 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # --- Configuration ---
-# It is recommended to use environment variables for sensitive data
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "excelmerge")
 CAMBODIA_TZ = pytz.timezone('Asia/Phnom_Penh')
 
+# --- NEW: Database Configuration ---
+# This bot MUST have access to the same DATABASE_URL as the other bot
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    logger.error("FATAL: DATABASE_URL environment variable is not set.")
+    # You might want to exit here if the DB is critical
+    # sys.exit(1)
+
+DB_POOL: Optional[asyncpg.Pool] = None
+db_lock = asyncio.Lock()
+
 # --- Data Storage (in-memory, resets on restart) ---
 user_data = {}
 user_breaks = {}
+
+# --- NEW: Database Helper Functions ---
+async def get_db_pool() -> asyncpg.Pool:
+    """Gets the shared database connection pool."""
+    global DB_POOL
+    if DB_POOL is None or DB_POOL.is_closing():
+        if not DATABASE_URL:
+            raise ValueError("DATABASE_URL is not set, cannot create pool.")
+        try:
+            DB_POOL = await asyncpg.create_pool(
+                dsn=DATABASE_URL,
+                max_inactive_connection_lifetime=60,
+                min_size=1,
+                max_size=5 # Smaller pool for this bot
+            )
+            if DB_POOL is None:
+                raise ConnectionError("Database pool initialization failed.")
+            logger.info("Database connection pool established.")
+        except Exception as e:
+            logger.error(f"Could not create database connection pool: {e}")
+            raise
+    return DB_POOL
+
+async def close_db_pool():
+    """Closes the database connection pool."""
+    global DB_POOL
+    if DB_POOL and not DB_POOL.is_closing():
+        logger.info("Closing database connection pool.")
+        await DB_POOL.close()
+        DB_POOL = None
+
+def _norm_owner_name(s: str) -> str:
+    """Normalizes an owner name (copied from other bot)."""
+    s = (s or "").strip()
+    if s.startswith("@"): s = s[1:]
+    return s.lower()
+
+async def _set_owner_status_in_db(owner_name: str, is_stopped: bool):
+    """Finds an owner in the 'owners' JSON blob and sets their disabled status."""
+    if not owner_name:
+        logger.warning("Attempted to set owner status for an empty username.")
+        return
+    
+    normalized_name = _norm_owner_name(owner_name)
+    if not normalized_name:
+        return
+
+    async with db_lock:
+        try:
+            pool = await get_db_pool()
+            async with pool.acquire() as conn:
+                async with conn.transaction():
+                    # Lock the row for update to prevent race conditions
+                    result = await conn.fetchval("SELECT data FROM kv_storage WHERE key = 'owners' FOR UPDATE")
+                    
+                    if not result:
+                        logger.warning(f"Could not find 'owners' key in kv_storage.")
+                        return
+
+                    owner_data = json.loads(result)
+                    found_owner = False
+                    for owner_group in owner_data:
+                        if _norm_owner_name(owner_group.get("owner", "")) == normalized_name:
+                            owner_group["disabled"] = is_stopped
+                            # If opening, also clear any timed 'disabled_until'
+                            if not is_stopped:
+                                owner_group.pop("disabled_until", None)
+                            found_owner = True
+                            break
+                    
+                    if found_owner:
+                        await conn.execute("UPDATE kv_storage SET data = $1, updated_at = NOW() WHERE key = 'owners'", json.dumps(owner_data))
+                        # THIS IS THE KEY: Send a notification to the other bot
+                        await conn.execute("NOTIFY owners_changed;")
+                        logger.info(f"Set owner '{normalized_name}' status to {'STOPPED' if is_stopped else 'OPENED'}.")
+                    else:
+                        logger.info(f"User '{normalized_name}' checked in/out, but is not a configured owner in kv_storage.")
+
+        except Exception as e:
+            logger.error(f"Failed to set owner status for '{normalized_name}': {e}", exc_info=True)
+
+async def _stop_all_owners_in_db():
+    """Sets all owners in the 'owners' JSON blob to disabled: true."""
+    logger.info("Running daily job to stop all owners...")
+    async with db_lock:
+        try:
+            pool = await get_db_pool()
+            async with pool.acquire() as conn:
+                async with conn.transaction():
+                    result = await conn.fetchval("SELECT data FROM kv_storage WHERE key = 'owners' FOR UPDATE")
+                    if not result:
+                        logger.warning(f"Could not find 'owners' key in kv_storage for daily stop.")
+                        return
+                    
+                    owner_data = json.loads(result)
+                    changes_made = False
+                    for owner_group in owner_data:
+                        if not owner_group.get("disabled", False):
+                            owner_group["disabled"] = True
+                            changes_made = True
+                    
+                    if changes_made:
+                        await conn.execute("UPDATE kv_storage SET data = $1, updated_at = NOW() WHERE key = 'owners'", json.dumps(owner_data))
+                        # Notify the other bot
+                        await conn.execute("NOTIFY owners_changed;")
+                        logger.info("Stopped all owners for end-of-day.")
+                    else:
+                        logger.info("All owners were already stopped. No changes made.")
+
+        except Exception as e:
+            logger.error(f"Failed to stop all owners: {e}", exc_info=True)
 
 # --- Helper Functions ---
 def get_now():
@@ -48,7 +173,6 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     """Logs the error and sends a telegram message to notify the developer."""
     logger.error("Exception while handling an update:", exc_info=context.error)
 
-
 # --- Command Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Sends a welcome message when the /start command is issued."""
@@ -66,10 +190,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def check_in(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles the 'check in' message."""
     user = update.message.from_user
-    _ensure_user_data(user) # Refactored user creation
+    _ensure_user_data(user) 
 
     now = get_now()
     user_data[user.id]["check_in"] = now
+
+    # --- MODIFIED: Auto-open owner ---
+    if user.username:
+        logger.info(f"User @{user.username} checking in. Attempting to open owner.")
+        await _set_owner_status_in_db(user.username, is_stopped=False)
+    else:
+        logger.warning(f"User {user.full_name} (ID: {user.id}) checked in but has no Telegram @username. Cannot link to owner.")
+    # --- End Modification ---
 
     # Check-in time logic
     if datetime.time(14, 0) <= now.time() < datetime.time(15, 0):
@@ -81,10 +213,10 @@ async def check_in(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         late_minutes = int((now - now.replace(hour=21, minute=0, second=0, microsecond=0)).total_seconds() / 60)
         await update.message.reply_text(f"You are late by {late_minutes} minutes (from 9 PM).")
 
-
 async def check_out(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles the 'check out' message."""
-    user_id = update.message.from_user.id
+    user = update.message.from_user # Get the full user object
+    user_id = user.id
     now = get_now()
 
     # Define valid check-out times
@@ -99,11 +231,20 @@ async def check_out(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_valid_time:
         if user_id in user_data:
             user_data[user_id]["check_out"] = now
-        # No message is sent for a valid checkout, as per user preference.
+        
+        # --- MODIFIED: Auto-stop owner ---
+        if user.username:
+            logger.info(f"User @{user.username} checking out. Attempting to stop owner.")
+            await _set_owner_status_in_db(user.username, is_stopped=True)
+        else:
+            logger.warning(f"User {user.full_name} (ID: {user.id}) checked out but has no Telegram @username. Cannot link to owner.")
+        # --- End Modification ---
+
     else:
         await update.message.reply_text("You are not allowed to check out at this time.")
 
-
+# ... (rest of the file: wc, smoke, eat, back_from_break, get_report) ...
+# ... (These functions do not need modification) ...
 async def wc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles the 'wc' message."""
     user = update.message.from_user
@@ -203,6 +344,10 @@ async def back_from_break(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def get_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Generates and sends the daily report if requested by an admin."""
+    # This function uses pandas, which is not in your requirements.
+    # I am assuming you have it installed or will remove this handler.
+    # For now, I will leave it but comment out the pandas part.
+    
     user = update.message.from_user
     if user.username != ADMIN_USERNAME:
         await update.message.reply_text("You are not authorized to perform this action.")
@@ -211,7 +356,17 @@ async def get_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if not user_data:
         await update.message.reply_text("No activity to report for today.")
         return
-
+        
+    # --- Code requiring pandas/openpyxl ---
+    # Since pandas is not in requirements.txt, this will fail.
+    # I'll leave the logic but be aware.
+    try:
+        import pandas as pd
+    except ImportError:
+        logger.error("Pandas not installed. Cannot generate Excel report.")
+        await update.message.reply_text("Report generation failed (missing library).")
+        return
+        
     # Sort users by check-in time, handling cases where check-in is None
     sorted_users = sorted(user_data.items(), key=lambda item: item[1].get('check_in') or datetime.datetime.max.replace(tzinfo=CAMBODIA_TZ))
 
@@ -236,7 +391,8 @@ async def get_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     file_path = f"daily_report_{get_now().strftime('%Y-%m-%d')}.xlsx"
     df.to_excel(file_path, index=False)
     
-    # --- Apply styling to the Excel file ---
+    # ... (styling code remains the same) ...
+    
     wb = load_workbook(file_path)
     ws = wb.active
 
@@ -268,6 +424,8 @@ async def get_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         ws.column_dimensions[column_cells[0].column_letter].width = (max_length + 2)
 
     wb.save(file_path)
+    
+    # --- End of pandas/openpyxl code ---
 
     with open(file_path, 'rb') as document:
         await context.bot.send_document(chat_id=update.message.chat_id, document=document)
@@ -275,19 +433,46 @@ async def get_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     os.remove(file_path)
     await update.message.reply_text("Report sent.")
 
+
 async def clear_data_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Clears all user data for the new day."""
+    """Clears all user data and STOPS all owners in the other bot."""
+    
+    # --- MODIFIED: Stop all owners ---
+    await _stop_all_owners_in_db()
+    # --- End Modification ---
+    
     user_data.clear()
     user_breaks.clear()
     logger.info("Daily user data has been cleared automatically.")
 
+# --- NEW: post_init and post_shutdown for DB ---
+async def post_initialization(application: Application):
+    """Runs once after the bot is initialized to setup DB."""
+    await get_db_pool()
+
+async def post_shutdown(application: Application):
+    """Runs once before the bot shuts down to close DB."""
+    await close_db_pool()
+# --- End new functions ---
+
 def main() -> None:
     """Start the bot."""
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
+    if not DATABASE_URL:
+        logger.critical("DATABASE_URL environment variable is not set. Bot cannot start.")
+        return
+
+    application = (
+        Application.builder()
+        .token(TELEGRAM_TOKEN)
+        .post_init(post_initialization)  # Add post_init
+        .post_shutdown(post_shutdown) # Add post_shutdown
+        .build()
+    )
     application.add_error_handler(error_handler)
     
     # Schedule the daily data clear job
     job_queue = application.job_queue
+    # This job now ALSO stops all owners
     clear_time = datetime.time(hour=3, minute=30, tzinfo=CAMBODIA_TZ)
     job_queue.run_daily(clear_data_job, clear_time)
     
