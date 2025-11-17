@@ -430,7 +430,7 @@ def main() -> None:
     application.add_error_handler(error_handler)
     
     job_queue = application.job_queue
-    clear_time = datetime.time(hour=3, minute=00, tzinfo=CAMBODIA_TZ)
+    clear_time = datetime.time(hour=4, minute=00, tzinfo=CAMBODIA_TZ)
     job_queue.run_daily(clear_data_job, clear_time)
     
     CHECKIN_REGEX = re.compile(r"^\s*(?:check\s*[- ]?in|checkin|ci|in|start(?:\s*[- ]?work)?)\s*$", re.IGNORECASE)
