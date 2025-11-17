@@ -3,43 +3,35 @@ import re
 import logging
 import datetime
 import pytz
-import json  # Import json
-import asyncio # Import asyncio
-import asyncpg # Import asyncpg
-from typing import Optional # Import Optional
+import json  
+import asyncio 
+import asyncpg 
+from typing import Optional 
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Font, Border, Side, Alignment
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# --- Basic Logging Setup ---
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# --- Configuration ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "excelmerge")
 CAMBODIA_TZ = pytz.timezone('Asia/Phnom_Penh')
 
-# --- NEW: Database Configuration ---
-# This bot MUST have access to the same DATABASE_URL as the other bot
 DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
     logger.error("FATAL: DATABASE_URL environment variable is not set.")
-    # You might want to exit here if the DB is critical
-    # sys.exit(1)
 
 DB_POOL: Optional[asyncpg.Pool] = None
 db_lock = asyncio.Lock()
 
-# --- Data Storage (in-memory, resets on restart) ---
 user_data = {}
 user_breaks = {}
 
-# --- NEW: Database Helper Functions ---
 async def get_db_pool() -> asyncpg.Pool:
     """Gets the shared database connection pool."""
     global DB_POOL
@@ -51,7 +43,7 @@ async def get_db_pool() -> asyncpg.Pool:
                 dsn=DATABASE_URL,
                 max_inactive_connection_lifetime=60,
                 min_size=1,
-                max_size=5 # Smaller pool for this bot
+                max_size=5 
             )
             if DB_POOL is None:
                 raise ConnectionError("Database pool initialization failed.")
@@ -90,7 +82,6 @@ async def _set_owner_status_in_db(owner_name: str, is_stopped: bool):
             pool = await get_db_pool()
             async with pool.acquire() as conn:
                 async with conn.transaction():
-                    # Lock the row for update to prevent race conditions
                     result = await conn.fetchval("SELECT data FROM kv_storage WHERE key = 'owners' FOR UPDATE")
                     
                     if not result:
@@ -102,7 +93,6 @@ async def _set_owner_status_in_db(owner_name: str, is_stopped: bool):
                     for owner_group in owner_data:
                         if _norm_owner_name(owner_group.get("owner", "")) == normalized_name:
                             owner_group["disabled"] = is_stopped
-                            # If opening, also clear any timed 'disabled_until'
                             if not is_stopped:
                                 owner_group.pop("disabled_until", None)
                             found_owner = True
@@ -110,7 +100,6 @@ async def _set_owner_status_in_db(owner_name: str, is_stopped: bool):
                     
                     if found_owner:
                         await conn.execute("UPDATE kv_storage SET data = $1, updated_at = NOW() WHERE key = 'owners'", json.dumps(owner_data))
-                        # THIS IS THE KEY: Send a notification to the other bot
                         await conn.execute("NOTIFY owners_changed;")
                         logger.info(f"Set owner '{normalized_name}' status to {'STOPPED' if is_stopped else 'OPENED'}.")
                     else:
@@ -141,7 +130,6 @@ async def _stop_all_owners_in_db():
                     
                     if changes_made:
                         await conn.execute("UPDATE kv_storage SET data = $1, updated_at = NOW() WHERE key = 'owners'", json.dumps(owner_data))
-                        # Notify the other bot
                         await conn.execute("NOTIFY owners_changed;")
                         logger.info("Stopped all owners for end-of-day.")
                     else:
@@ -150,7 +138,6 @@ async def _stop_all_owners_in_db():
         except Exception as e:
             logger.error(f"Failed to stop all owners: {e}", exc_info=True)
 
-# --- Helper Functions ---
 def get_now():
     """Gets the current time in Cambodia timezone."""
     return datetime.datetime.now(CAMBODIA_TZ)
@@ -168,12 +155,10 @@ def _ensure_user_data(user: 'telegram.User'):
             "eat_count": 0, "eat_late": 0
         }
 
-# --- Error Handler ---
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Logs the error and sends a telegram message to notify the developer."""
     logger.error("Exception while handling an update:", exc_info=context.error)
 
-# --- Command Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Sends a welcome message when the /start command is issued."""
     await update.message.reply_text(
@@ -195,33 +180,29 @@ async def check_in(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     now = get_now()
     user_data[user.id]["check_in"] = now
 
-    # --- MODIFIED: Auto-open owner ---
     if user.username:
         logger.info(f"User @{user.username} checking in. Attempting to open owner.")
         await _set_owner_status_in_db(user.username, is_stopped=False)
     else:
         logger.warning(f"User {user.full_name} (ID: {user.id}) checked in but has no Telegram @username. Cannot link to owner.")
-    # --- End Modification ---
 
-    # Check-in time logic
-    if datetime.time(14, 0) <= now.time() < datetime.time(15, 0):
+    if datetime.time(13, 0) <= now.time() < datetime.time(15, 0):
         await update.message.reply_text("Well done!")
-    elif datetime.time(15, 9) < now.time() < datetime.time(18, 0):
+    elif datetime.time(15, 5) < now.time() < datetime.time(21, 0):
         late_minutes = int((now - now.replace(hour=15, minute=0, second=0, microsecond=0)).total_seconds() / 60)
-        await update.message.reply_text(f"You are late by {late_minutes} minutes.")
+        await update.message.reply_text(f"You are late {late_minutes} minutes.")
     elif datetime.time(21, 1) < now.time() < datetime.time(21, 59):
         late_minutes = int((now - now.replace(hour=21, minute=0, second=0, microsecond=0)).total_seconds() / 60)
-        await update.message.reply_text(f"You are late by {late_minutes} minutes (from 9 PM).")
+        await update.message.reply_text(f"You are late {late_minutes} minutes (from 9 PM).")
 
 async def check_out(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles the 'check out' message."""
-    user = update.message.from_user # Get the full user object
+    user = update.message.from_user 
     user_id = user.id
     now = get_now()
 
-    # Define valid check-out times
     checkout_break_start = datetime.time(21, 0)
-    checkout_break_end = datetime.time(21, 59, 59)
+    checkout_break_end = datetime.time(23, 59, 59)
     checkout_final_start = datetime.time(3, 0)
     checkout_final_end = datetime.time(6, 0)
 
@@ -232,23 +213,19 @@ async def check_out(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if user_id in user_data:
             user_data[user_id]["check_out"] = now
         
-        # --- MODIFIED: Auto-stop owner ---
         if user.username:
             logger.info(f"User @{user.username} checking out. Attempting to stop owner.")
             await _set_owner_status_in_db(user.username, is_stopped=True)
         else:
             logger.warning(f"User {user.full_name} (ID: {user.id}) checked out but has no Telegram @username. Cannot link to owner.")
-        # --- End Modification ---
 
     else:
         await update.message.reply_text("You are not allowed to check out at this time.")
 
-# ... (rest of the file: wc, smoke, eat, back_from_break, get_report) ...
-# ... (These functions do not need modification) ...
 async def wc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles the 'wc' message."""
     user = update.message.from_user
-    _ensure_user_data(user) # Refactored user creation
+    _ensure_user_data(user) 
 
     if user.id not in user_breaks:
         user_breaks[user.id] = {"type": "wc", "start_time": get_now()}
@@ -259,7 +236,7 @@ async def wc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def smoke(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles the 'smoke' message."""
     user = update.message.from_user
-    _ensure_user_data(user) # Refactored user creation
+    _ensure_user_data(user)
 
     if user.id not in user_breaks:
         user_breaks[user.id] = {"type": "smoke", "start_time": get_now()}
@@ -280,7 +257,7 @@ async def eat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if (eat_time1_start <= now <= eat_time1_end) or \
        (eat_time2_start <= now <= eat_time2_end):
 
-        _ensure_user_data(user) # Refactored user creation
+        _ensure_user_data(user) 
 
         if user.id not in user_breaks:
             user_breaks[user.id] = {"type": "eat", "start_time": get_now()}
@@ -300,7 +277,7 @@ async def back_from_break(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         start_time = break_info["start_time"]
         end_time = get_now()
 
-        _ensure_user_data(user) # Ensure data exists just in case
+        _ensure_user_data(user) 
 
         late_minutes = 0
 
@@ -321,16 +298,11 @@ async def back_from_break(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         elif break_type == 'eat':
             user_data[user_id]["eat_count"] += 1
             
-            # --- CORRECTED LOGIC ---
-            # Determine the correct deadline based on the date the break STARTED.
-            # This fixes the bug where the bot miscalculated lateness.
             deadline = None
             
-            # First eating window (21:00 - 21:30)
             if start_time.hour == 17:
                 deadline = start_time.replace(hour=17, minute=30, second=0, microsecond=0)
             
-            # Second eating window (01:00 - 01:30)
             elif start_time.hour == 1:
                 deadline = start_time.replace(hour=00, minute=30, second=0, microsecond=0)
 
@@ -340,13 +312,10 @@ async def back_from_break(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     user_data[user_id]["eat_late"] += late_minutes
         
         if late_minutes > 0:
-            await update.message.reply_text(f"You are late by {late_minutes} minutes.")
+            await update.message.reply_text(f"You are late {late_minutes} minutes.")
 
 async def get_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Generates and sends the daily report if requested by an admin."""
-    # This function uses pandas, which is not in your requirements.
-    # I am assuming you have it installed or will remove this handler.
-    # For now, I will leave it but comment out the pandas part.
     
     user = update.message.from_user
     if user.username != ADMIN_USERNAME:
@@ -357,9 +326,6 @@ async def get_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await update.message.reply_text("No activity to report for today.")
         return
         
-    # --- Code requiring pandas/openpyxl ---
-    # Since pandas is not in requirements.txt, this will fail.
-    # I'll leave the logic but be aware.
     try:
         import pandas as pd
     except ImportError:
@@ -367,7 +333,6 @@ async def get_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await update.message.reply_text("Report generation failed (missing library).")
         return
         
-    # Sort users by check-in time, handling cases where check-in is None
     sorted_users = sorted(user_data.items(), key=lambda item: item[1].get('check_in') or datetime.datetime.max.replace(tzinfo=CAMBODIA_TZ))
 
     report_data = []
@@ -391,7 +356,6 @@ async def get_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     file_path = f"daily_report_{get_now().strftime('%Y-%m-%d')}.xlsx"
     df.to_excel(file_path, index=False)
     
-    # ... (styling code remains the same) ...
     
     wb = load_workbook(file_path)
     ws = wb.active
@@ -425,7 +389,6 @@ async def get_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     wb.save(file_path)
     
-    # --- End of pandas/openpyxl code ---
 
     with open(file_path, 'rb') as document:
         await context.bot.send_document(chat_id=update.message.chat_id, document=document)
@@ -437,15 +400,12 @@ async def get_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 async def clear_data_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Clears all user data and STOPS all owners in the other bot."""
     
-    # --- MODIFIED: Stop all owners ---
     await _stop_all_owners_in_db()
-    # --- End Modification ---
     
     user_data.clear()
     user_breaks.clear()
     logger.info("Daily user data has been cleared automatically.")
 
-# --- NEW: post_init and post_shutdown for DB ---
 async def post_initialization(application: Application):
     """Runs once after the bot is initialized to setup DB."""
     await get_db_pool()
@@ -453,7 +413,6 @@ async def post_initialization(application: Application):
 async def post_shutdown(application: Application):
     """Runs once before the bot shuts down to close DB."""
     await close_db_pool()
-# --- End new functions ---
 
 def main() -> None:
     """Start the bot."""
@@ -464,19 +423,16 @@ def main() -> None:
     application = (
         Application.builder()
         .token(TELEGRAM_TOKEN)
-        .post_init(post_initialization)  # Add post_init
-        .post_shutdown(post_shutdown) # Add post_shutdown
+        .post_init(post_initialization)  
+        .post_shutdown(post_shutdown) 
         .build()
     )
     application.add_error_handler(error_handler)
     
-    # Schedule the daily data clear job
     job_queue = application.job_queue
-    # This job now ALSO stops all owners
-    clear_time = datetime.time(hour=2, minute=55, tzinfo=CAMBODIA_TZ)
+    clear_time = datetime.time(hour=3, minute=00, tzinfo=CAMBODIA_TZ)
     job_queue.run_daily(clear_data_job, clear_time)
     
-    # Regex for commands
     CHECKIN_REGEX = re.compile(r"^\s*(?:check\s*[- ]?in|checkin|ci|in|start(?:\s*[- ]?work)?)\s*$", re.IGNORECASE)
     CHECKOUT_REGEX = re.compile(r"^\s*(?:check\s*[- ]?out|checkout|co|out|end(?:\s*[- ]?work)?)\s*$", re.IGNORECASE)
     WC_REGEX = re.compile(r"^\s*(?:wc|toilet|restroom)(?:\d{1,2})?\s*$", re.IGNORECASE)
