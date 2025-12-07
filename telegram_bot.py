@@ -249,9 +249,9 @@ async def eat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.message.from_user
     now = get_now()
 
-    eat_time1_start = now.replace(hour=17, minute=0, second=0, microsecond=0)
+    eat_time1_start = now.replace(hour=16, minute=50, second=0, microsecond=0)
     eat_time1_end = now.replace(hour=17, minute=30, second=0, microsecond=0)
-    eat_time2_start = now.replace(hour=00, minute=30, second=0, microsecond=0)
+    eat_time2_start = now.replace(hour=00, minute=20, second=0, microsecond=0)
     eat_time2_end = now.replace(hour=1, minute=00, second=0, microsecond=0)
 
     if (eat_time1_start <= now <= eat_time1_end) or \
