@@ -300,10 +300,10 @@ async def back_from_break(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             
             deadline = None
             
-            if start_time.hour == 17:
+            if start_time.hour == 16 or start_time.hour == 17:
                 deadline = start_time.replace(hour=17, minute=30, second=0, microsecond=0)
             
-            elif start_time.hour == 1:
+            elif start_time.hour == 0 or start_time.hour == 1:
                 deadline = start_time.replace(hour=00, minute=30, second=0, microsecond=0)
 
             if deadline and end_time > deadline:
